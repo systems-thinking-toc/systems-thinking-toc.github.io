@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Why Work Piles Up — The Theory of Constraints</title>
+<style>
+  :root{
+    --bg:#0e1320; --panel:#161d2e; --panel2:#1d2640; --line:#2a3551;
+    --text:#e6ecf7; --muted:#8b97b3; --accent:#5b8cff;
+    --backlog:#5a6480; --active:#5b8cff; --queue:#f0a93b; --done:#34c47b; --rework:#ff5d6c; --warn:#ffb020;
+    --radius:12px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{background:var(--bg);color:var(--text);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  .wrap{height:100%;max-width:1280px;margin:0 auto;padding:14px 16px;display:flex;flex-direction:column;gap:12px;}
+
+  header{flex:0 0 auto;}
+  header h1{font-size:clamp(18px,2.6vw,26px);margin:0;letter-spacing:-.02em;}
+  header p{color:var(--muted);margin:4px 0 0;font-size:13.5px;line-height:1.45;max-width:840px;}
+
+  /* Controls */
+  .controls{flex:0 0 auto;display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+  button{font:inherit;font-size:14px;font-weight:600;color:var(--text);background:var(--panel2);
+    border:1px solid var(--line);border-radius:9px;padding:9px 16px;cursor:pointer;transition:.15s;white-space:nowrap;}
+  button:hover:not(:disabled){border-color:var(--accent);background:#26314f;}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+  button.primary:hover:not(:disabled){background:#4a7bff;}
+  .speed{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);}
+  .speed input{accent-color:var(--accent);}
+  .sprint{margin-left:auto;font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px;}
+  .sprint b{font-size:22px;color:var(--text);font-variant-numeric:tabular-nums;}
+
+  /* Status bar */
+  .status{flex:0 0 auto;display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;}
+  .chips{display:flex;gap:10px;flex-wrap:wrap;}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 14px;min-width:96px;}
+  .chip .n{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1;}
+  .chip .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+  .chip.done .n{color:var(--done);} .chip.wait .n{color:var(--queue);}
+  .chip.prog .n{color:var(--active);} .chip.back .n{color:var(--rework);}
+  .now{flex:1;min-width:240px;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:9px 14px;display:flex;flex-direction:column;justify-content:center;}
+  .now .head{font-size:15px;font-weight:600;line-height:1.3;}
+  .now .sub{font-size:12.5px;color:var(--muted);margin-top:3px;min-height:16px;}
+  .now.alert{border-color:var(--rework);box-shadow:0 0 0 1px var(--rework) inset;}
+
+  /* Board */
+  .board-shell{flex:1 1 auto;min-height:0;background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--radius);padding:10px;overflow:auto;}
+  .board{display:flex;gap:7px;align-items:stretch;height:100%;width:100%;min-width:max-content;}
+  .col{display:flex;flex-direction:column;border-radius:10px;flex:2 0 106px;min-width:0;
+    background:var(--panel2);border:1px solid var(--line);}
+  .col.queue-col{flex:1 0 88px;background:#1a2034;border-style:dashed;}
+  .col.backlog-col{flex:0 0 134px;}
+  .col.done-col{flex:2 0 134px;}
+  .col-head{padding:7px 9px 7px;border-bottom:1px solid var(--line);flex:0 0 auto;}
+  .col-title{font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:4px;}
+  .col-title .count{font-size:11px;color:var(--muted);font-weight:600;background:#0e1320;
+    border-radius:6px;padding:1px 7px;font-variant-numeric:tabular-nums;}
+  .col-sub{font-size:10.5px;color:var(--muted);margin-top:1px;}
+  .queue-col .col-title{color:var(--queue);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;}
+  .people{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--muted);}
+  .dots{display:flex;gap:3px;}
+  .dot{width:9px;height:9px;border-radius:50%;background:#33405f;}
+  .dot.filled{background:var(--active);}
+  .col.full .people{color:var(--warn);}
+  .col.constraint{border-color:var(--rework);box-shadow:0 0 0 1px var(--rework) inset;}
+  .ctag{display:none;font-size:9.5px;font-weight:700;color:var(--rework);text-transform:uppercase;
+    letter-spacing:.05em;margin-top:5px;}
+  .col.constraint .ctag{display:block;}
+  .list{display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px;padding:8px;flex:1 1 auto;overflow:auto;}
+
+  /* Work items — fill color marks the sprint a feature STARTED (its cohort) */
+  .item{width:15px;height:15px;border-radius:4px;background:var(--backlog);
+    will-change:transform;flex:0 0 auto;}
+  .item.reworked{box-shadow:0 0 0 2px var(--rework);}
+
+  .legend{flex:0 0 auto;display:flex;flex-wrap:wrap;gap:16px;font-size:12px;color:var(--muted);}
+  .legend span{display:flex;align-items:center;gap:6px;}
+  .sw{width:13px;height:13px;border-radius:4px;}
+
+  @media(max-width:760px){
+    body{overflow:auto;}
+    .wrap{height:auto;}
+    .board-shell{min-height:340px;}
+    .sprint{margin-left:0;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Why work piles up: a delivery flow you can watch</h1>
+    <p>50 features start in the <b>Backlog</b> and move left-to-right through the team: <b>BA</b> (specify) →
+    <b>Dev</b> (build) → <b>QA</b> (test) → <b>UAT</b> (sign-off) → <b>Done</b>. Every step has a limited number of
+    people, so work that's ready but has nowhere to go waits in a <b>queue</b>. Watch where it piles up — that
+    spot is the <b>bottleneck</b>, and it sets the pace for the whole team.</p>
+  </header>
+
+  <div class="controls">
+    <button id="prevBtn">◀ Previous</button>
+    <button id="stepBtn" class="primary">▶ Next sprint</button>
+    <button id="playBtn">⏯ Play</button>
+    <button id="resetBtn">↺ Start over</button>
+    <label class="speed">Speed <input id="speed" type="range" min="300" max="1500" value="800" step="50"></label>
+    <div class="sprint">Sprint <b id="sprintNum">0</b></div>
+  </div>
+
+  <div class="status">
+    <div class="chips">
+      <div class="chip done"><div class="n" id="mDone">0</div><div class="l">Delivered</div></div>
+      <div class="chip prog"><div class="n" id="mProg">0</div><div class="l">Being worked on</div></div>
+      <div class="chip wait"><div class="n" id="mWait">0</div><div class="l">Stuck in queues</div></div>
+      <div class="chip back"><div class="n" id="mBack">0</div><div class="l">Sent back</div></div>
+    </div>
+    <div class="now" id="now">
+      <div class="head" id="nowHead">Press “Next sprint” to start the work flowing.</div>
+      <div class="sub" id="nowSub"></div>
+    </div>
+  </div>
+
+  <div class="board-shell"><div class="board" id="board"></div></div>
+
+  <div class="legend">
+    <span><i class="sw" style="background:var(--backlog)"></i>Not started yet</span>
+    <span><i class="sw" style="background:linear-gradient(90deg,hsl(53 68% 60%),hsl(180 68% 60%),hsl(306 68% 60%))"></i>Each color = the sprint a feature started</span>
+    <span><i class="sw" style="background:transparent;box-shadow:0 0 0 2px var(--rework) inset"></i>Sent back for fixes</span>
+    <span>Its <b>column</b> shows the stage it's in · dashed = a waiting queue</span>
+  </div>
+</div>
+
+<script>
+"use strict";
+(function(){
+  const TOTAL=50, SEED=0x2f6b1c3d;
+  const STAGES=['BA','Dev','QA','UAT'], QUEUE_STAGES=['Dev','QA','UAT'];
+  const INIT_CAP={BA:3, Dev:4, QA:3, UAT:2};
+  const BUG_P=0.30, REJECT_P=0.22, DECAY=0.55;
+  const PEOPLE={BA:'business analysts', Dev:'developers', QA:'testers', UAT:'reviewers'};
+  const SUB={BA:'specify', Dev:'build', QA:'test', UAT:'sign-off'};
+
+  // Scripted capacity changes (people in/out) keyed by sprint.
+  const EVENTS={
+    4:[{stage:'QA', delta:-1, msg:'A tester is out sick'}],
+    6:[{stage:'Dev',delta:+1, msg:'A new developer joins the team'}],
+    7:[{stage:'QA', delta:+1, msg:'The tester is back'}],
+    9:[{stage:'BA', delta:-1, msg:'A business analyst goes on leave'}],
+    10:[{stage:'UAT',delta:+1,msg:'An extra reviewer helps out for a while'}],
+    12:[{stage:'BA', delta:+1, msg:'The business analyst returns'}],
+    14:[{stage:'UAT',delta:-1, msg:'The extra reviewer leaves'}],
+    18:[{stage:'Dev',delta:-1, msg:'A developer is pulled onto a production emergency'}],
+    21:[{stage:'Dev',delta:+1, msg:'The developer is back on the team'}],
+    24:[{stage:'QA', delta:+2, msg:'QA is clearly the bottleneck — two extra testers brought in for a big push'}],
+    30:[{stage:'QA', delta:-2, msg:'QA queue is under control — the two extra testers head back to their team'}],
+  };
+
+  // Deterministic PRNG (mulberry32) — same story every replay.
+  let _seed;
+  function rng(){_seed|=0;_seed=(_seed+0x6D2B79F5)|0;let t=Math.imul(_seed^(_seed>>>15),1|_seed);
+    t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;}
+  function workSize(s){if(s==='Dev')return rng()<0.45?2:1;if(s==='BA')return rng()<0.25?2:1;
+    if(s==='QA')return rng()<0.20?2:1;return 1;}
+  function reworkChance(b,r){return b*Math.pow(DECAY,r);}
+
+  let items,backlog,queues,active,done,cap,sprint,reworkTotal,constraint,finished,lastEvents,lastDelivered,reworkThisSprint,heldOver,historyStack;
+
+  function reset(){
+    _seed=SEED; sprint=0; reworkTotal=0; constraint=null; finished=false; lastEvents=[]; lastDelivered=0; reworkThisSprint=0;
+    heldOver={BA:0,Dev:0,QA:0,UAT:0};
+    cap=Object.assign({},INIT_CAP);
+    backlog=[]; done=[]; queues={Dev:[],QA:[],UAT:[]}; active={BA:[],Dev:[],QA:[],UAT:[]}; items=[];
+    for(let i=0;i<TOTAL;i++){const it={id:i+1,remaining:0,reworks:0,enteredBA:null,doneSprint:null,reworked:false,color:null,el:null};
+      items.push(it); backlog.push(it);}
+    historyStack=[snapshot()];
+  }
+
+  // Full deterministic state snapshot (incl. PRNG seed) so we can step backward and replay forward identically.
+  function snapshot(){
+    return {
+      seed:_seed, sprint, cap:Object.assign({},cap), reworkTotal, constraint, finished,
+      lastEvents:lastEvents.slice(), lastDelivered, reworkThisSprint, heldOver:Object.assign({},heldOver),
+      backlog:backlog.map(i=>i.id),
+      queues:{Dev:queues.Dev.map(i=>i.id),QA:queues.QA.map(i=>i.id),UAT:queues.UAT.map(i=>i.id)},
+      active:{BA:active.BA.map(i=>i.id),Dev:active.Dev.map(i=>i.id),QA:active.QA.map(i=>i.id),UAT:active.UAT.map(i=>i.id)},
+      done:done.map(i=>i.id),
+      items:items.map(i=>({id:i.id,remaining:i.remaining,reworks:i.reworks,enteredBA:i.enteredBA,doneSprint:i.doneSprint,reworked:i.reworked,color:i.color}))
+    };
+  }
+  function restore(s){
+    _seed=s.seed; sprint=s.sprint; cap=Object.assign({},s.cap); reworkTotal=s.reworkTotal;
+    constraint=s.constraint; finished=s.finished; lastEvents=s.lastEvents.slice();
+    lastDelivered=s.lastDelivered; reworkThisSprint=s.reworkThisSprint; heldOver=Object.assign({},s.heldOver);
+    const byId={}; items.forEach(it=>byId[it.id]=it);
+    s.items.forEach(si=>{const it=byId[si.id]; it.remaining=si.remaining; it.reworks=si.reworks;
+      it.enteredBA=si.enteredBA; it.doneSprint=si.doneSprint; it.reworked=si.reworked; it.color=si.color;});
+    const m=ids=>ids.map(id=>byId[id]);
+    backlog=m(s.backlog);
+    queues={Dev:m(s.queues.Dev),QA:m(s.queues.QA),UAT:m(s.queues.UAT)};
+    active={BA:m(s.active.BA),Dev:m(s.active.Dev),QA:m(s.active.QA),UAT:m(s.active.UAT)};
+    done=m(s.done);
+  }
+
+  function step(){
+    if(finished) return;
+    sprint++; lastEvents=[];
+    const evs=EVENTS[sprint];
+    if(evs) for(const e of evs){ cap[e.stage]=Math.max(1,cap[e.stage]+e.delta);
+      lastEvents.push((e.delta>0?'📈 ':'📉 ')+e.msg); }
+
+    let delivered=0, rw=0;
+    heldOver={BA:0,Dev:0,QA:0,UAT:0};
+    for(const st of STAGES){
+      const stay=[];
+      for(const it of active[st]){
+        it.remaining--;
+        if(it.remaining>0){ stay.push(it); heldOver[st]++; continue; }
+        if(st==='BA') queues.Dev.push(it);
+        else if(st==='Dev') queues.QA.push(it);
+        else if(st==='QA'){
+          if(rng()<reworkChance(BUG_P,it.reworks)){ it.reworks++; it.reworked=true; reworkTotal++; rw++; queues.Dev.push(it); }
+          else queues.UAT.push(it);
+        } else if(st==='UAT'){
+          if(rng()<reworkChance(REJECT_P,it.reworks)){ it.reworks++; it.reworked=true; reworkTotal++; rw++; queues.Dev.push(it); }
+          else { it.doneSprint=sprint; done.push(it); delivered++; }
+        }
+      }
+      active[st]=stay;
+    }
+    lastDelivered=delivered; reworkThisSprint=rw;
+    while(active.BA.length<cap.BA && backlog.length){ const it=backlog.shift(); it.enteredBA=sprint; it.color='hsl('+((sprint*53)%360)+' 68% 60%)'; it.remaining=workSize('BA'); active.BA.push(it); }
+    for(const st of QUEUE_STAGES) while(active[st].length<cap[st] && queues[st].length){ const it=queues[st].shift(); it.remaining=workSize(st); active[st].push(it); }
+
+    let best=null,bestN=0;
+    for(const st of QUEUE_STAGES) if(queues[st].length>bestN){ bestN=queues[st].length; best=st; }
+    constraint = bestN>=3 ? best : null;
+    if(done.length===TOTAL) finished=true;
+  }
+
+  // ---- DOM ----
+  const board=document.getElementById('board');
+  const lists={}, qlists={}, cols={}, heads={};
+  const LAYOUT=[
+    {type:'backlog',key:'backlog',label:'Backlog',sub:'not started yet'},
+    {type:'stage',key:'BA',label:'BA',sub:SUB.BA},
+    {type:'queue',key:'Dev',label:'waiting'},
+    {type:'stage',key:'Dev',label:'Dev',sub:SUB.Dev},
+    {type:'queue',key:'QA',label:'waiting'},
+    {type:'stage',key:'QA',label:'QA',sub:SUB.QA},
+    {type:'queue',key:'UAT',label:'waiting'},
+    {type:'stage',key:'UAT',label:'UAT',sub:SUB.UAT},
+    {type:'done',key:'done',label:'Done',sub:'shipped to users'},
+  ];
+
+  function buildBoard(){
+    board.innerHTML='';
+    for(const c of LAYOUT){
+      const col=document.createElement('div');
+      col.className='col '+(c.type==='queue'?'queue-col':c.type+'-col');
+      const head=document.createElement('div'); head.className='col-head';
+      const title=document.createElement('div'); title.className='col-title';
+      const name=document.createElement('span'); name.textContent=c.label;
+      const count=document.createElement('span'); count.className='count'; count.textContent='0';
+      title.appendChild(name); title.appendChild(count); head.appendChild(title);
+      if(c.sub){ const s=document.createElement('div'); s.className='col-sub'; s.textContent=c.sub; head.appendChild(s); }
+      let dotsEl=null,pplEl=null;
+      if(c.type==='stage'){
+        const ppl=document.createElement('div'); ppl.className='people';
+        const lbl=document.createElement('span'); const dots=document.createElement('span'); dots.className='dots';
+        ppl.appendChild(lbl); ppl.appendChild(dots); head.appendChild(ppl);
+        const tag=document.createElement('div'); tag.className='ctag'; tag.textContent='◀ bottleneck'; head.appendChild(tag);
+        dotsEl=dots; pplEl=lbl;
+      }
+      col.appendChild(head);
+      const list=document.createElement('div'); list.className='list'; col.appendChild(list);
+      if(c.type==='queue') qlists[c.key]=list; else lists[c.key]=list;
+      board.appendChild(col);
+      const k=c.type==='queue'?('q-'+c.key):c.key;
+      cols[k]=col; heads[k]={count,dots:dotsEl,ppl:pplEl};
+    }
+    for(const it of items){ const el=document.createElement('div'); el.className='item'; it.el=el; lists.backlog.appendChild(el); }
+  }
+
+  function paint(it,inBacklog){
+    const cls='item'+(it.reworked?' reworked':'');
+    if(it.el.className!==cls) it.el.className=cls;
+    it.el.style.background = inBacklog ? '' : it.color;   // backlog stays neutral grey
+    if(it.reworks>0) it.el.title='Started sprint '+it.enteredBA+' · sent back '+it.reworks+(it.reworks>1?' times':' time');
+    else if(it.enteredBA) it.el.title='Started sprint '+it.enteredBA;
+  }
+
+  function render(animate){
+    const els=items.map(i=>i.el);
+    const first=animate?new Map(els.map(e=>[e,e.getBoundingClientRect()])):null;
+    backlog.forEach(it=>{ paint(it,true); lists.backlog.appendChild(it.el); });
+    active.BA.forEach(it=>{ paint(it,false); lists.BA.appendChild(it.el); });
+    QUEUE_STAGES.forEach(st=>{
+      queues[st].forEach(it=>{ paint(it,false); qlists[st].appendChild(it.el); });
+      active[st].forEach(it=>{ paint(it,false); lists[st].appendChild(it.el); });
+    });
+    done.forEach(it=>{ paint(it,false); lists.done.appendChild(it.el); });
+    if(animate) els.forEach(e=>{
+      const f=first.get(e),l=e.getBoundingClientRect(),dx=f.left-l.left,dy=f.top-l.top;
+      if(dx||dy){ e.style.transition='none'; e.style.transform=`translate(${dx}px,${dy}px)`;
+        requestAnimationFrame(()=>{ e.style.transition='transform .55s cubic-bezier(.4,0,.2,1)'; e.style.transform=''; }); }
+    });
+    renderHeaders(); renderStatus();
+  }
+
+  function renderHeaders(){
+    heads.backlog.count.textContent=backlog.length;
+    heads.done.count.textContent=done.length;
+    for(const st of STAGES){
+      const h=heads[st]; h.count.textContent=active[st].length;
+      h.ppl.textContent=cap[st]+(cap[st]===1?' person':' people');
+      let d=''; for(let i=0;i<cap[st];i++) d+='<i class="dot'+(i<active[st].length?' filled':'')+'"></i>';
+      h.dots.innerHTML=d;
+      cols[st].classList.toggle('full',active[st].length>=cap[st]);
+      cols[st].classList.toggle('constraint',constraint===st);
+    }
+    for(const st of QUEUE_STAGES) heads['q-'+st].count.textContent=queues[st].length;
+  }
+
+  // Stages that have idle people AND unfinished work still upstream of them = starved.
+  function starvedStages(){
+    let upstream=backlog.length; const res=[];
+    const addAfter={BA:active.BA.length+queues.Dev.length, Dev:active.Dev.length+queues.QA.length,
+                    QA:active.QA.length+queues.UAT.length, UAT:active.UAT.length};
+    for(const st of STAGES){
+      const idle=cap[st]-active[st].length;
+      if(idle>0 && upstream>0) res.push({st,idle,cap:cap[st]});
+      upstream+=addAfter[st];
+    }
+    return res;
+  }
+
+  function renderStatus(){
+    document.getElementById('sprintNum').textContent=sprint;
+    document.getElementById('mDone').textContent=done.length;
+    document.getElementById('mProg').textContent=STAGES.reduce((a,s)=>a+active[s].length,0);
+    document.getElementById('mWait').textContent=QUEUE_STAGES.reduce((a,s)=>a+queues[s].length,0);
+    document.getElementById('mBack').textContent=reworkTotal;
+
+    const now=document.getElementById('now'), head=document.getElementById('nowHead'), sub=document.getElementById('nowSub');
+    now.classList.toggle('alert', !!constraint);
+    if(sprint===0){ head.textContent='Press “Next sprint” to start the work flowing.'; sub.textContent=''; return; }
+
+    // supporting details for this sprint (what just happened)
+    const details=[];
+    if(lastEvents.length) details.push(lastEvents.join('  ·  '));
+    if(lastDelivered>0) details.push('✅ '+lastDelivered+' feature'+(lastDelivered>1?'s':'')+' delivered this sprint');
+    if(reworkThisSprint>0) details.push('🔴 '+reworkThisSprint+' item'+(reworkThisSprint>1?'s':'')+' bounced back for fixes (QA bugs / UAT rejections)');
+    const held=STAGES.filter(s=>heldOver[s]>0).map(s=>heldOver[s]+' '+s);
+    const heldN=STAGES.reduce((a,s)=>a+heldOver[s],0);
+    if(heldN>0) details.push('⏱️ '+held.join(', ')+' task'+(heldN>1?'s':'')+' need 2 sprints (effort varies), so fewer items moved on');
+
+    const idle=starvedStages();
+
+    if(finished){
+      head.textContent='🎉 All 50 features delivered — it took '+sprint+' sprints.';
+      sub.textContent='Notice how the bottleneck, not the size of the team, set the pace of the whole system.';
+      return;
+    }
+    if(constraint){
+      const n=queues[constraint].length;
+      head.textContent='⚠️ '+constraint+' is the bottleneck — '+n+' items are waiting for '+PEOPLE[constraint]+
+        '. Nothing downstream can finish faster than '+constraint+' lets work through.';
+      const ds=idle.filter(x=>STAGES.indexOf(x.st)>STAGES.indexOf(constraint));
+      if(ds.length) details.unshift('💤 '+ds.map(x=>x.st+' ('+x.idle+' of '+x.cap+' idle)').join(', ')+
+        ' — starved, because work is stuck upstream at '+constraint);
+    } else if(idle.length){
+      const top=idle.slice().sort((a,b)=>b.idle-a.idle)[0];
+      head.textContent='⏳ The pipeline is still filling — '+top.st+' has '+top.idle+' of '+top.cap+
+        ' people idle, waiting for work to arrive from earlier steps. Spare capacity ≠ more output.';
+    } else {
+      head.textContent='✅ Work is flowing smoothly — every step is busy and no queue is piling up.';
+    }
+    sub.textContent = details.join('  ·  ');
+  }
+
+  // ---- Controls ----
+  let timer=null;
+  const prevBtn=document.getElementById('prevBtn'), stepBtn=document.getElementById('stepBtn'),
+        playBtn=document.getElementById('playBtn'), resetBtn=document.getElementById('resetBtn'),
+        speedEl=document.getElementById('speed');
+  function updateButtons(){ prevBtn.disabled=historyStack.length<=1; stepBtn.disabled=finished; }
+  function doStep(){ if(finished) return; step(); historyStack.push(snapshot()); render(true); updateButtons(); }
+  function doPrev(){ if(historyStack.length<=1) return; stopPlay();
+    historyStack.pop(); restore(historyStack[historyStack.length-1]); render(true); updateButtons(); }
+  function startPlay(){ if(finished) return; playBtn.textContent='⏸ Pause';
+    timer=setInterval(()=>{ if(finished){ stopPlay(); return; } doStep(); }, +speedEl.value); }
+  function stopPlay(){ if(timer){ clearInterval(timer); timer=null; } playBtn.textContent='⏯ Play'; }
+  prevBtn.addEventListener('click',()=>{ doPrev(); });
+  stepBtn.addEventListener('click',()=>{ stopPlay(); doStep(); });
+  playBtn.addEventListener('click',()=>{ timer?stopPlay():startPlay(); });
+  speedEl.addEventListener('input',()=>{ if(timer){ stopPlay(); startPlay(); } });
+  resetBtn.addEventListener('click',()=>{ stopPlay(); reset(); buildBoard(); render(false); updateButtons(); });
+
+  reset(); buildBoard(); render(false); updateButtons();
+})();
+</script>
+</body>
+</html>
