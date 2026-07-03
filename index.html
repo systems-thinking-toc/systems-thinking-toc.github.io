@@ -51,13 +51,13 @@
 
   /* Board */
   .board-shell{flex:1 1 auto;min-height:0;background:var(--panel);border:1px solid var(--line);
-    border-radius:var(--radius);padding:10px;overflow:auto;}
-  .board{display:flex;gap:7px;align-items:stretch;height:100%;width:100%;min-width:max-content;}
-  .col{display:flex;flex-direction:column;border-radius:10px;flex:2 0 106px;min-width:0;
+    border-radius:var(--radius);padding:10px;overflow:hidden;}
+  .board{display:flex;gap:7px;align-items:stretch;height:100%;width:100%;}
+  .col{display:flex;flex-direction:column;border-radius:10px;flex:2 1 106px;min-width:0;
     background:var(--panel2);border:1px solid var(--line);}
-  .col.queue-col{flex:1 0 88px;background:#1a2034;border-style:dashed;}
-  .col.backlog-col{flex:0 0 134px;}
-  .col.done-col{flex:2 0 134px;}
+  .col.queue-col{flex:1 1 88px;background:#1a2034;border-style:dashed;}
+  .col.backlog-col{flex:1 1 110px;}
+  .col.done-col{flex:2 1 110px;}
   .col-head{padding:7px 9px 7px;border-bottom:1px solid var(--line);flex:0 0 auto;}
   .col-title{font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:4px;}
   .col-title .count{font-size:11px;color:var(--muted);font-weight:600;background:#0e1320;
@@ -65,6 +65,8 @@
   .col-sub{font-size:10.5px;color:var(--muted);margin-top:1px;}
   .queue-col .col-title{color:var(--queue);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;}
   .people{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--muted);}
+  .thru{margin-top:4px;font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .thru b{color:var(--done);font-weight:700;font-size:12px;}
   .dots{display:flex;gap:3px;}
   .dot{width:9px;height:9px;border-radius:50%;background:#33405f;}
   .dot.filled{background:var(--active);}
@@ -73,7 +75,8 @@
   .ctag{display:none;font-size:9.5px;font-weight:700;color:var(--rework);text-transform:uppercase;
     letter-spacing:.05em;margin-top:5px;}
   .col.constraint .ctag{display:block;}
-  .list{display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px;padding:8px;flex:1 1 auto;overflow:auto;}
+  .list{display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px;padding:8px;flex:1 1 auto;
+    min-height:0;overflow-y:auto;overflow-x:hidden;}
 
   /* Work items — fill color marks the sprint a feature STARTED (its cohort) */
   .item{width:15px;height:15px;border-radius:4px;background:var(--backlog);
@@ -167,11 +170,11 @@
     if(s==='QA')return rng()<0.20?2:1;return 1;}
   function reworkChance(b,r){return b*Math.pow(DECAY,r);}
 
-  let items,backlog,queues,active,done,cap,sprint,reworkTotal,constraint,finished,lastEvents,lastDelivered,reworkThisSprint,heldOver,historyStack;
+  let items,backlog,queues,active,done,cap,sprint,reworkTotal,constraint,finished,lastEvents,lastDelivered,reworkThisSprint,heldOver,completed,historyStack;
 
   function reset(){
     _seed=SEED; sprint=0; reworkTotal=0; constraint=null; finished=false; lastEvents=[]; lastDelivered=0; reworkThisSprint=0;
-    heldOver={BA:0,Dev:0,QA:0,UAT:0};
+    heldOver={BA:0,Dev:0,QA:0,UAT:0}; completed={BA:0,Dev:0,QA:0,UAT:0};
     cap=Object.assign({},INIT_CAP);
     backlog=[]; done=[]; queues={Dev:[],QA:[],UAT:[]}; active={BA:[],Dev:[],QA:[],UAT:[]}; items=[];
     for(let i=0;i<TOTAL;i++){const it={id:i+1,remaining:0,reworks:0,enteredBA:null,doneSprint:null,reworked:false,color:null,el:null};
@@ -184,6 +187,7 @@
     return {
       seed:_seed, sprint, cap:Object.assign({},cap), reworkTotal, constraint, finished,
       lastEvents:lastEvents.slice(), lastDelivered, reworkThisSprint, heldOver:Object.assign({},heldOver),
+      completed:Object.assign({},completed),
       backlog:backlog.map(i=>i.id),
       queues:{Dev:queues.Dev.map(i=>i.id),QA:queues.QA.map(i=>i.id),UAT:queues.UAT.map(i=>i.id)},
       active:{BA:active.BA.map(i=>i.id),Dev:active.Dev.map(i=>i.id),QA:active.QA.map(i=>i.id),UAT:active.UAT.map(i=>i.id)},
@@ -195,6 +199,7 @@
     _seed=s.seed; sprint=s.sprint; cap=Object.assign({},s.cap); reworkTotal=s.reworkTotal;
     constraint=s.constraint; finished=s.finished; lastEvents=s.lastEvents.slice();
     lastDelivered=s.lastDelivered; reworkThisSprint=s.reworkThisSprint; heldOver=Object.assign({},s.heldOver);
+    completed=Object.assign({},s.completed);
     const byId={}; items.forEach(it=>byId[it.id]=it);
     s.items.forEach(si=>{const it=byId[si.id]; it.remaining=si.remaining; it.reworks=si.reworks;
       it.enteredBA=si.enteredBA; it.doneSprint=si.doneSprint; it.reworked=si.reworked; it.color=si.color;});
@@ -219,6 +224,7 @@
       for(const it of active[st]){
         it.remaining--;
         if(it.remaining>0){ stay.push(it); heldOver[st]++; continue; }
+        completed[st]++;
         if(st==='BA') queues.Dev.push(it);
         else if(st==='Dev') queues.QA.push(it);
         else if(st==='QA'){
@@ -267,20 +273,21 @@
       const count=document.createElement('span'); count.className='count'; count.textContent='0';
       title.appendChild(name); title.appendChild(count); head.appendChild(title);
       if(c.sub){ const s=document.createElement('div'); s.className='col-sub'; s.textContent=c.sub; head.appendChild(s); }
-      let dotsEl=null,pplEl=null;
+      let dotsEl=null,pplEl=null,thruEl=null;
       if(c.type==='stage'){
         const ppl=document.createElement('div'); ppl.className='people';
         const lbl=document.createElement('span'); const dots=document.createElement('span'); dots.className='dots';
         ppl.appendChild(lbl); ppl.appendChild(dots); head.appendChild(ppl);
+        const thru=document.createElement('div'); thru.className='thru'; head.appendChild(thru);
         const tag=document.createElement('div'); tag.className='ctag'; tag.textContent='◀ bottleneck'; head.appendChild(tag);
-        dotsEl=dots; pplEl=lbl;
+        dotsEl=dots; pplEl=lbl; thruEl=thru;
       }
       col.appendChild(head);
       const list=document.createElement('div'); list.className='list'; col.appendChild(list);
       if(c.type==='queue') qlists[c.key]=list; else lists[c.key]=list;
       board.appendChild(col);
       const k=c.type==='queue'?('q-'+c.key):c.key;
-      cols[k]=col; heads[k]={count,dots:dotsEl,ppl:pplEl};
+      cols[k]=col; heads[k]={count,dots:dotsEl,ppl:pplEl,thru:thruEl};
     }
     for(const it of items){ const el=document.createElement('div'); el.className='item'; it.el=el; lists.backlog.appendChild(el); }
   }
@@ -319,6 +326,9 @@
       h.ppl.textContent=cap[st]+(cap[st]===1?' person':' people');
       let d=''; for(let i=0;i<cap[st];i++) d+='<i class="dot'+(i<active[st].length?' filled':'')+'"></i>';
       h.dots.innerHTML=d;
+      h.thru.innerHTML = sprint>0
+        ? 'avg <b>'+(completed[st]/sprint).toFixed(1)+'</b>/sprint ('+completed[st]+' done)'
+        : 'avg <b>—</b>/sprint';
       cols[st].classList.toggle('full',active[st].length>=cap[st]);
       cols[st].classList.toggle('constraint',constraint===st);
     }
