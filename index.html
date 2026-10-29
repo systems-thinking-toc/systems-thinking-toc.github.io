@@ -10,6 +10,8 @@
     --text:#e6ecf7; --muted:#8b97b3; --accent:#5b8cff;
     --backlog:#5a6480; --active:#5b8cff; --queue:#f0a93b; --done:#34c47b; --rework:#ff5d6c; --warn:#ffb020;
     --radius:12px;
+    /* One work square. Scales with the viewport so columns never need to clip or scroll sideways. */
+    --cell:clamp(8px,1.15vw,15px);
   }
   *{box-sizing:border-box;}
   html,body{height:100%;margin:0;}
@@ -43,55 +45,88 @@
   .chip .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
   .chip.done .n{color:var(--done);} .chip.wait .n{color:var(--queue);}
   .chip.prog .n{color:var(--active);} .chip.back .n{color:var(--rework);}
-  .now{flex:1;min-width:240px;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  .now{flex:1;min-width:min(240px,100%);background:var(--panel);border:1px solid var(--line);border-radius:10px;
     padding:9px 14px;display:flex;flex-direction:column;justify-content:center;}
   .now .head{font-size:15px;font-weight:600;line-height:1.3;}
-  .now .sub{font-size:12.5px;color:var(--muted);margin-top:3px;min-height:16px;}
+  .now .sub{font-size:12.5px;color:var(--muted);margin-top:3px;min-height:16px;
+    display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;}
   .now.alert{border-color:var(--rework);box-shadow:0 0 0 1px var(--rework) inset;}
 
   /* Board */
   .board-shell{flex:1 1 auto;min-height:0;background:var(--panel);border:1px solid var(--line);
     border-radius:var(--radius);padding:10px;overflow:hidden;}
-  .board{display:flex;gap:7px;align-items:stretch;height:100%;width:100%;}
-  .col{display:flex;flex-direction:column;border-radius:10px;flex:2 1 106px;min-width:0;
+  .board{display:flex;gap:7px;align-items:stretch;height:100%;width:100%;min-width:0;}
+  /* Width comes entirely from --grow, which JS sets each sprint from how much work the column
+     holds. A zero flex-basis means the nine columns always divide the width that exists, so a
+     full column widens at its neighbours' expense instead of overflowing the board. */
+  .col{display:flex;flex-direction:column;border-radius:10px;flex:var(--grow,2) 1 0;min-width:0;
     background:var(--panel2);border:1px solid var(--line);}
-  .col.queue-col{flex:1 1 88px;background:#1a2034;border-style:dashed;}
-  .col.backlog-col{flex:1 1 110px;}
-  .col.done-col{flex:2 1 110px;}
-  .col-head{padding:7px 9px 7px;border-bottom:1px solid var(--line);flex:0 0 auto;}
+  .col.queue-col{background:#1a2034;border-style:dashed;}
+  .col-head{padding:7px 9px 7px;border-bottom:1px solid var(--line);flex:0 0 auto;min-width:0;}
   .col-title{font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:4px;}
+  .col-title>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
   .col-title .count{font-size:11px;color:var(--muted);font-weight:600;background:#0e1320;
-    border-radius:6px;padding:1px 7px;font-variant-numeric:tabular-nums;}
-  .col-sub{font-size:10.5px;color:var(--muted);margin-top:1px;}
+    border-radius:6px;padding:1px 7px;font-variant-numeric:tabular-nums;flex:0 0 auto;}
+  .col-sub{font-size:10.5px;color:var(--muted);margin-top:1px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .queue-col .col-title{color:var(--queue);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;}
-  .people{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--muted);}
-  .thru{margin-top:4px;font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .people{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--muted);
+    flex-wrap:wrap;min-width:0;}
+  .people>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .thru{margin-top:4px;font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .thru b{color:var(--done);font-weight:700;font-size:12px;}
-  .dots{display:flex;gap:3px;}
+  .dots{display:flex;gap:3px;flex-wrap:wrap;}
   .dot{width:9px;height:9px;border-radius:50%;background:#33405f;}
   .dot.filled{background:var(--active);}
+  .dot.over{box-shadow:0 0 0 1px var(--warn);}   /* more work in flight than people: a mid-sprint headcount cut */
   .col.full .people{color:var(--warn);}
   .col.constraint{border-color:var(--rework);box-shadow:0 0 0 1px var(--rework) inset;}
   .ctag{display:none;font-size:9.5px;font-weight:700;color:var(--rework);text-transform:uppercase;
     letter-spacing:.05em;margin-top:5px;}
   .col.constraint .ctag{display:block;}
-  .list{display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px;padding:8px;flex:1 1 auto;
-    min-height:0;overflow-y:auto;overflow-x:hidden;}
+  /* auto-fill means the squares re-flow to whatever width the column currently has; they shrink
+     to --cell rather than spilling out of it, so no column ever scrolls sideways. */
+  .list{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--cell),1fr));
+    align-content:start;gap:4px;padding:8px;flex:1 1 auto;
+    min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;}
 
   /* Work items — fill color marks the sprint a feature STARTED (its cohort) */
-  .item{width:15px;height:15px;border-radius:4px;background:var(--backlog);
-    will-change:transform;flex:0 0 auto;}
+  .item{aspect-ratio:1;min-width:0;max-width:15px;border-radius:4px;background:var(--backlog);
+    will-change:transform;transition:transform var(--flip,.55s) cubic-bezier(.4,0,.2,1);}
   .item.reworked{box-shadow:0 0 0 2px var(--rework);}
 
   .legend{flex:0 0 auto;display:flex;flex-wrap:wrap;gap:16px;font-size:12px;color:var(--muted);}
   .legend span{display:flex;align-items:center;gap:6px;}
   .sw{width:13px;height:13px;border-radius:4px;}
 
+  /* Not enough height for a fixed-viewport layout — let the page scroll vertically. */
+  @media(prefers-reduced-motion:reduce){
+    .item{transition:none !important;}
+    button{transition:none;}
+  }
+
+  @media(max-height:560px){
+    body{overflow:auto;}
+    .wrap{height:auto;}
+    .board-shell{min-height:320px;}
+  }
+
+  /* Too narrow for nine side-by-side columns. Rotate the board: each stage becomes a full-width
+     row, flowing top-to-bottom. Keeps the whole pipeline on screen with no sideways scrolling. */
   @media(max-width:760px){
     body{overflow:auto;}
     .wrap{height:auto;}
-    .board-shell{min-height:340px;}
+    .board-shell{flex:0 0 auto;overflow:visible;padding:8px;}
+    .board{flex-direction:column;height:auto;gap:6px;}
+    .col{flex:0 0 auto !important;flex-direction:row;align-items:stretch;}
+    .col-head{flex:0 0 118px;border-bottom:none;border-right:1px solid var(--line);}
+    .list{min-height:44px;max-height:168px;}
     .sprint{margin-left:0;}
+  }
+  @media(max-width:460px){
+    .col-head{flex:0 0 96px;}
+    .col-sub,.thru{display:none;}
   }
 </style>
 </head>
@@ -102,15 +137,18 @@
     <p>50 features start in the <b>Backlog</b> and move left-to-right through the team: <b>BA</b> (specify) →
     <b>Dev</b> (build) → <b>QA</b> (test) → <b>UAT</b> (sign-off) → <b>Done</b>. Every step has a limited number of
     people, so work that's ready but has nowhere to go waits in a <b>queue</b>. Watch where it piles up — that
-    spot is the <b>bottleneck</b>, and it sets the pace for the whole team.</p>
+    spot is the <b>bottleneck</b>, and it sets the pace for the whole team. When a queue stays over a
+    step's capacity for several sprints, the team lends that step an extra person until it drains —
+    watch the bottleneck <b>move</b> to the next step rather than disappear.</p>
   </header>
 
   <div class="controls">
-    <button id="prevBtn">◀ Previous</button>
-    <button id="stepBtn" class="primary">▶ Next sprint</button>
-    <button id="playBtn">⏯ Play</button>
-    <button id="resetBtn">↺ Start over</button>
-    <label class="speed">Speed <input id="speed" type="range" min="300" max="1500" value="800" step="50"></label>
+    <button id="prevBtn" aria-label="Previous sprint">◀ Previous</button>
+    <button id="stepBtn" class="primary" aria-label="Next sprint">▶ Next sprint</button>
+    <button id="playBtn" aria-label="Play or pause">⏯ Play</button>
+    <button id="resetBtn" aria-label="Start over">↺ Start over</button>
+    <label class="speed">Speed <input id="speed" type="range" min="300" max="1500" value="1000" step="50"
+      aria-label="Playback speed, left slower, right faster"></label>
     <div class="sprint">Sprint <b id="sprintNum">0</b></div>
   </div>
 
@@ -121,19 +159,21 @@
       <div class="chip wait"><div class="n" id="mWait">0</div><div class="l">Stuck in queues</div></div>
       <div class="chip back"><div class="n" id="mBack">0</div><div class="l">Sent back</div></div>
     </div>
-    <div class="now" id="now">
+    <div class="now" id="now" role="status" aria-live="polite" aria-atomic="true">
       <div class="head" id="nowHead">Press “Next sprint” to start the work flowing.</div>
       <div class="sub" id="nowSub"></div>
     </div>
   </div>
 
-  <div class="board-shell"><div class="board" id="board"></div></div>
+  <div class="board-shell"><div class="board" id="board" role="group"
+    aria-label="Delivery board: work items by stage"></div></div>
 
   <div class="legend">
     <span><i class="sw" style="background:var(--backlog)"></i>Not started yet</span>
     <span><i class="sw" style="background:linear-gradient(90deg,hsl(53 68% 60%),hsl(180 68% 60%),hsl(306 68% 60%))"></i>Each color = the sprint a feature started</span>
     <span><i class="sw" style="background:transparent;box-shadow:0 0 0 2px var(--rework) inset"></i>Sent back for fixes</span>
     <span>Its <b>column</b> shows the stage it's in · dashed = a waiting queue</span>
+    <span>Busier steps grow wider</span>
   </div>
 </div>
 
@@ -158,9 +198,16 @@
     14:[{stage:'UAT',delta:-1, msg:'The extra reviewer leaves'}],
     18:[{stage:'Dev',delta:-1, msg:'A developer is pulled onto a production emergency'}],
     21:[{stage:'Dev',delta:+1, msg:'The developer is back on the team'}],
-    24:[{stage:'QA', delta:+2, msg:'QA is clearly the bottleneck — two extra testers brought in for a big push'}],
-    30:[{stage:'QA', delta:-2, msg:'QA queue is under control — the two extra testers head back to their team'}],
   };
+
+  // Management response. The old hard-coded "bring in two testers at sprint 24" is gone: the team
+  // now reacts to what the queues are actually doing, so the constraint moves on its own.
+  const LOAD_MULT=3;   // a queue at 3x the stage's capacity is an immediate red flag...
+  const PRESSURE=2;    // ...acted on once it has held for this many sprints
+  const STALL=3;       // a queue stuck above capacity this long clearly isn't draining
+  const RELIEF=3;      // queue at or below capacity this long -> the borrowed person goes back
+  const MAX_HELP=4;    // most extra people one stage can borrow at a time
+  const PERSON={BA:'business analyst', Dev:'developer', QA:'tester', UAT:'reviewer'};
 
   // Deterministic PRNG (mulberry32) — same story every replay.
   let _seed;
@@ -170,17 +217,25 @@
     if(s==='QA')return rng()<0.20?2:1;return 1;}
   function reworkChance(b,r){return b*Math.pow(DECAY,r);}
 
-  let items,backlog,queues,active,done,cap,sprint,reworkTotal,constraint,finished,lastEvents,lastDelivered,reworkThisSprint,heldOver,completed,historyStack;
+  let items,backlog,queues,active,done,cap,sprint,reworkTotal,constraint,finished,lastEvents,lastDelivered,reworkThisSprint,heldOver,completed,historyStack,
+      overload,relief,help,qHist,base;
 
   function reset(){
     _seed=SEED; sprint=0; reworkTotal=0; constraint=null; finished=false; lastEvents=[]; lastDelivered=0; reworkThisSprint=0;
     heldOver={BA:0,Dev:0,QA:0,UAT:0}; completed={BA:0,Dev:0,QA:0,UAT:0};
-    cap=Object.assign({},INIT_CAP);
+    overload={Dev:0,QA:0,UAT:0}; relief={Dev:0,QA:0,UAT:0};
+    help={BA:0,Dev:0,QA:0,UAT:0}; qHist={Dev:[],QA:[],UAT:[]};
+    base=Object.assign({},INIT_CAP); cap=Object.assign({},INIT_CAP);
     backlog=[]; done=[]; queues={Dev:[],QA:[],UAT:[]}; active={BA:[],Dev:[],QA:[],UAT:[]}; items=[];
     for(let i=0;i<TOTAL;i++){const it={id:i+1,remaining:0,reworks:0,enteredBA:null,doneSprint:null,reworked:false,color:null,el:null};
       items.push(it); backlog.push(it);}
     historyStack=[snapshot()];
   }
+
+  // Capacity is a stage's permanent headcount plus whatever help it has borrowed. Keeping the two
+  // apart means a scripted absence can never be mistaken for a loan being repaid: scripted events
+  // move base, the management response moves help, and cap is always just the sum.
+  function syncCap(){ for(const st of STAGES) cap[st]=base[st]+help[st]; }
 
   // Full deterministic state snapshot (incl. PRNG seed) so we can step backward and replay forward identically.
   function snapshot(){
@@ -188,6 +243,9 @@
       seed:_seed, sprint, cap:Object.assign({},cap), reworkTotal, constraint, finished,
       lastEvents:lastEvents.slice(), lastDelivered, reworkThisSprint, heldOver:Object.assign({},heldOver),
       completed:Object.assign({},completed),
+      base:Object.assign({},base),
+      overload:Object.assign({},overload), relief:Object.assign({},relief), help:Object.assign({},help),
+      qHist:{Dev:qHist.Dev.slice(),QA:qHist.QA.slice(),UAT:qHist.UAT.slice()},
       backlog:backlog.map(i=>i.id),
       queues:{Dev:queues.Dev.map(i=>i.id),QA:queues.QA.map(i=>i.id),UAT:queues.UAT.map(i=>i.id)},
       active:{BA:active.BA.map(i=>i.id),Dev:active.Dev.map(i=>i.id),QA:active.QA.map(i=>i.id),UAT:active.UAT.map(i=>i.id)},
@@ -200,6 +258,9 @@
     constraint=s.constraint; finished=s.finished; lastEvents=s.lastEvents.slice();
     lastDelivered=s.lastDelivered; reworkThisSprint=s.reworkThisSprint; heldOver=Object.assign({},s.heldOver);
     completed=Object.assign({},s.completed);
+    base=Object.assign({},s.base);
+    overload=Object.assign({},s.overload); relief=Object.assign({},s.relief); help=Object.assign({},s.help);
+    qHist={Dev:s.qHist.Dev.slice(),QA:s.qHist.QA.slice(),UAT:s.qHist.UAT.slice()};
     const byId={}; items.forEach(it=>byId[it.id]=it);
     s.items.forEach(si=>{const it=byId[si.id]; it.remaining=si.remaining; it.reworks=si.reworks;
       it.enteredBA=si.enteredBA; it.doneSprint=si.doneSprint; it.reworked=si.reworked; it.color=si.color;});
@@ -210,12 +271,42 @@
     done=m(s.done);
   }
 
+  // What is waiting to enter a stage. BA pulls from the Backlog; everyone else from a queue.
+  function waitingFor(st){ return st==='BA' ? backlog : queues[st]; }
+
   function step(){
     if(finished) return;
     sprint++; lastEvents=[];
     const evs=EVENTS[sprint];
-    if(evs) for(const e of evs){ cap[e.stage]=Math.max(1,cap[e.stage]+e.delta);
+    if(evs) for(const e of evs){ base[e.stage]=Math.max(1,base[e.stage]+e.delta); syncCap();
       lastEvents.push((e.delta>0?'📈 ':'📉 ')+e.msg); }
+
+    // Management response. A stage earns an extra person when its queue hits LOAD_MULT x capacity
+    // for PRESSURE sprints running, or simply sits above capacity for STALL sprints without
+    // draining. The help is temporary: once the queue is back under capacity for RELIEF sprints
+    // the borrowed person leaves, so capacity tracks the queue instead of ratcheting up forever.
+    // Judged on the queues left at the end of last sprint, so new people can pick work up below.
+    for(const st of QUEUE_STAGES){
+      const q=queues[st].length, h=qHist[st];
+      const heavy = q >= LOAD_MULT*cap[st];
+      if(heavy){ overload[st]++; relief[st]=0; }
+      else if(q<=cap[st]){ relief[st]++; overload[st]=0; }
+      else { overload[st]=0; relief[st]=0; }
+      // "not draining" = above capacity for the whole window and no smaller than when it started
+      const stalled = q>cap[st] && h.length>=STALL && q>=h[0] && h.every(v=>v>cap[st]);
+      if((overload[st]>=PRESSURE || stalled) && help[st]<MAX_HELP){
+        help[st]++; syncCap(); overload[st]=0; h.length=0;
+        lastEvents.push('📈 '+st+' queue '+(heavy
+            ? 'is at '+q+', over '+LOAD_MULT+'× capacity'
+            : 'has not drained in '+STALL+' sprints')+
+          ' — an extra '+PERSON[st]+' joins '+st);
+      } else if(relief[st]>=RELIEF && help[st]>0){
+        help[st]--; syncCap(); relief[st]=0; h.length=0;
+        lastEvents.push('📉 '+st+' queue has drained — the extra '+PERSON[st]+' leaves');
+      } else {
+        h.push(q); if(h.length>STALL) h.shift();
+      }
+    }
 
     let delivered=0, rw=0;
     heldOver={BA:0,Dev:0,QA:0,UAT:0};
@@ -243,7 +334,12 @@
 
     let best=null,bestN=0;
     for(const st of QUEUE_STAGES) if(queues[st].length>bestN){ bestN=queues[st].length; best=st; }
-    constraint = bestN>=3 ? best : null;
+    // The Backlog is demand, not proof BA can't keep up, so its size alone must not make BA the
+    // constraint. BA qualifies only when it is fully loaded and Dev is idle for want of specs —
+    // then BA really is what limits the line, and the pile-up is upstream instead of in a queue.
+    const baStarvesDev = backlog.length>0 && active.BA.length>=cap.BA
+      && queues.Dev.length===0 && active.Dev.length<cap.Dev;
+    constraint = bestN>=3 ? best : (baStarvesDev ? 'BA' : null);
     if(done.length===TOTAL) finished=true;
   }
 
@@ -283,7 +379,9 @@
         dotsEl=dots; pplEl=lbl; thruEl=thru;
       }
       col.appendChild(head);
-      const list=document.createElement('div'); list.className='list'; col.appendChild(list);
+      const list=document.createElement('div'); list.className='list';
+      // 50 identical squares read as noise; the per-column count in the header carries the number.
+      list.setAttribute('aria-hidden','true'); col.appendChild(list);
       if(c.type==='queue') qlists[c.key]=list; else lists[c.key]=list;
       board.appendChild(col);
       const k=c.type==='queue'?('q-'+c.key):c.key;
@@ -292,12 +390,28 @@
     for(const it of items){ const el=document.createElement('div'); el.className='item'; it.el=el; lists.backlog.appendChild(el); }
   }
 
+  // Columns share the board's width in proportion to --grow. Each column starts from a base
+  // weight and earns a little more for every item it holds, so a filling queue widens instead of
+  // squeezing its squares out of view. Capped so one busy column can't starve the rest.
+  const GROW_BASE={backlog:1.7, stage:2, queue:1.25, done:2};
+  function layoutColumns(){
+    const counts={backlog:backlog.length, done:done.length};
+    for(const st of STAGES) counts[st]=active[st].length;
+    for(const st of QUEUE_STAGES) counts['q-'+st]=queues[st].length;
+    for(const c of LAYOUT){
+      const k = c.type==='queue' ? ('q-'+c.key) : c.key;
+      const grow = GROW_BASE[c.type==='stage'?'stage':c.type] + Math.min(counts[k]||0,12)*0.11;
+      cols[k].style.setProperty('--grow',grow.toFixed(2));
+    }
+  }
+
   function paint(it,inBacklog){
     const cls='item'+(it.reworked?' reworked':'');
     if(it.el.className!==cls) it.el.className=cls;
     it.el.style.background = inBacklog ? '' : it.color;   // backlog stays neutral grey
     if(it.reworks>0) it.el.title='Started sprint '+it.enteredBA+' · sent back '+it.reworks+(it.reworks>1?' times':' time');
     else if(it.enteredBA) it.el.title='Started sprint '+it.enteredBA;
+    else it.el.removeAttribute('title');   // stepping backward can un-start an item
   }
 
   function render(animate){
@@ -310,10 +424,12 @@
       active[st].forEach(it=>{ paint(it,false); lists[st].appendChild(it.el); });
     });
     done.forEach(it=>{ paint(it,false); lists.done.appendChild(it.el); });
+    layoutColumns();   // before the FLIP read, so squares animate into the new column widths
     if(animate) els.forEach(e=>{
       const f=first.get(e),l=e.getBoundingClientRect(),dx=f.left-l.left,dy=f.top-l.top;
       if(dx||dy){ e.style.transition='none'; e.style.transform=`translate(${dx}px,${dy}px)`;
-        requestAnimationFrame(()=>{ e.style.transition='transform .55s cubic-bezier(.4,0,.2,1)'; e.style.transform=''; }); }
+        // clearing the inline transition hands timing back to the --flip rule in CSS
+        requestAnimationFrame(()=>{ e.style.transition=''; e.style.transform=''; }); }
     });
     renderHeaders(); renderStatus();
   }
@@ -323,12 +439,16 @@
     heads.done.count.textContent=done.length;
     for(const st of STAGES){
       const h=heads[st]; h.count.textContent=active[st].length;
-      h.ppl.textContent=cap[st]+(cap[st]===1?' person':' people');
-      let d=''; for(let i=0;i<cap[st];i++) d+='<i class="dot'+(i<active[st].length?' filled':'')+'"></i>';
+      h.ppl.textContent=cap[st]+(cap[st]===1?' person':' people')+(help[st]>0?' (+'+help[st]+' helping)':'');
+      // a headcount cut can leave more work in flight than people; show those slots rather than hide them
+      const slots=Math.max(cap[st],active[st].length);
+      let d=''; for(let i=0;i<slots;i++) d+='<i class="dot'+(i<active[st].length?' filled':'')+(i>=cap[st]?' over':'')+'"></i>';
       h.dots.innerHTML=d;
       h.thru.innerHTML = sprint>0
-        ? 'avg <b>'+(completed[st]/sprint).toFixed(1)+'</b>/sprint ('+completed[st]+' done)'
+        ? 'avg <b>'+(completed[st]/sprint).toFixed(1)+'</b>/sprint ('+completed[st]+' passes)'
         : 'avg <b>—</b>/sprint';
+      // "passes", not "features": an item sent back and reworked crosses this stage again.
+      h.thru.title='Times work has passed through '+st+'. Rework counts each time, so this can exceed 50.';
       cols[st].classList.toggle('full',active[st].length>=cap[st]);
       cols[st].classList.toggle('constraint',constraint===st);
     }
@@ -357,11 +477,12 @@
 
     const now=document.getElementById('now'), head=document.getElementById('nowHead'), sub=document.getElementById('nowSub');
     now.classList.toggle('alert', !!constraint);
-    if(sprint===0){ head.textContent='Press “Next sprint” to start the work flowing.'; sub.textContent=''; return; }
+    if(sprint===0){ head.textContent='Press “Next sprint” to start the work flowing.'; sub.textContent='';
+      sub.removeAttribute('title'); return; }
 
     // supporting details for this sprint (what just happened)
     const details=[];
-    if(lastEvents.length) details.push(lastEvents.join('  ·  '));
+    if(lastEvents.length) details.push(...lastEvents);
     if(lastDelivered>0) details.push('✅ '+lastDelivered+' feature'+(lastDelivered>1?'s':'')+' delivered this sprint');
     if(reworkThisSprint>0) details.push('🔴 '+reworkThisSprint+' item'+(reworkThisSprint>1?'s':'')+' bounced back for fixes (QA bugs / UAT rejections)');
     const held=STAGES.filter(s=>heldOver[s]>0).map(s=>heldOver[s]+' '+s);
@@ -373,12 +494,16 @@
     if(finished){
       head.textContent='🎉 All 50 features delivered — it took '+sprint+' sprints.';
       sub.textContent='Notice how the bottleneck, not the size of the team, set the pace of the whole system.';
+      sub.removeAttribute('title');
       return;
     }
     if(constraint){
-      const n=queues[constraint].length;
-      head.textContent='⚠️ '+constraint+' is the bottleneck — '+n+' items are waiting for '+PEOPLE[constraint]+
-        '. Nothing downstream can finish faster than '+constraint+' lets work through.';
+      const n=waitingFor(constraint).length;
+      head.textContent = constraint==='BA'
+        ? '⚠️ BA is the bottleneck — Dev has people free but no specs to build. Nothing downstream '+
+          'can start faster than '+PEOPLE.BA+' can write them, however big the Backlog gets.'
+        : '⚠️ '+constraint+' is the bottleneck — '+n+' items are waiting for '+PEOPLE[constraint]+
+          '. Nothing downstream can finish faster than '+constraint+' lets work through.';
       const ds=idle.filter(x=>STAGES.indexOf(x.st)>STAGES.indexOf(constraint));
       if(ds.length) details.unshift('💤 '+ds.map(x=>x.st+' ('+x.idle+' of '+x.cap+' idle)').join(', ')+
         ' — starved, because work is stuck upstream at '+constraint);
@@ -389,7 +514,14 @@
     } else {
       head.textContent='✅ Work is flowing smoothly — every step is busy and no queue is piling up.';
     }
-    sub.textContent = details.join('  ·  ');
+    // The box is two lines tall. Fill it to a character budget rather than a fixed item count --
+    // three long details overflow where three short ones don't -- and keep the "+N more" marker
+    // inside the visible text so the reader knows to hover for the rest.
+    sub.title = details.join('  ·  ');
+    const shown=[]; let used=0;
+    for(const d of details){ if(shown.length && used+d.length>180) break; shown.push(d); used+=d.length+5; }
+    const extra=details.length-shown.length;
+    sub.textContent = shown.join('  ·  ') + (extra ? '  ·  +'+extra+' more' : '');
   }
 
   // ---- Controls ----
@@ -401,16 +533,21 @@
   function doStep(){ if(finished) return; step(); historyStack.push(snapshot()); render(true); updateButtons(); }
   function doPrev(){ if(historyStack.length<=1) return; stopPlay();
     historyStack.pop(); restore(historyStack[historyStack.length-1]); render(true); updateButtons(); }
+  // The slider reads left-to-right as slow-to-fast, so the sprint delay is its inverse.
+  function frameDelay(){ return 1800 - +speedEl.value; }
+  // Keep the move animation shorter than the gap between sprints, or it gets cut off mid-flight.
+  function syncFlip(){ document.documentElement.style.setProperty('--flip',
+    Math.min(550,Math.round(frameDelay()*0.7))+'ms'); }
   function startPlay(){ if(finished) return; playBtn.textContent='⏸ Pause';
-    timer=setInterval(()=>{ if(finished){ stopPlay(); return; } doStep(); }, +speedEl.value); }
+    timer=setInterval(()=>{ if(finished){ stopPlay(); return; } doStep(); }, frameDelay()); }
   function stopPlay(){ if(timer){ clearInterval(timer); timer=null; } playBtn.textContent='⏯ Play'; }
   prevBtn.addEventListener('click',()=>{ doPrev(); });
   stepBtn.addEventListener('click',()=>{ stopPlay(); doStep(); });
   playBtn.addEventListener('click',()=>{ timer?stopPlay():startPlay(); });
-  speedEl.addEventListener('input',()=>{ if(timer){ stopPlay(); startPlay(); } });
+  speedEl.addEventListener('input',()=>{ syncFlip(); if(timer){ stopPlay(); startPlay(); } });
   resetBtn.addEventListener('click',()=>{ stopPlay(); reset(); buildBoard(); render(false); updateButtons(); });
 
-  reset(); buildBoard(); render(false); updateButtons();
+  syncFlip(); reset(); buildBoard(); render(false); updateButtons();
 })();
 </script>
 </body>
